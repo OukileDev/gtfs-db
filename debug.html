@@ -1,0 +1,424 @@
+<!-- Cette page a été 100% générée par intelligence artificielle (c'est du debug) -->
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Oukile - GTFS Inspector</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: #eee; margin: 0; display: flex; height: 100vh; }
+        /* ── SIDEBAR ── */
+        .sidebar { width: 340px; min-width: 340px; background: #1e1e1e; border-right: 2px solid #333; padding: 16px; display: flex; flex-direction: column; gap: 12px; overflow-y: auto; }
+        .card { background: #2a2a2a; padding: 14px; border-radius: 8px; border-left: 4px solid #0088ff; }
+        .card.rt { border-left-color: #e74c3c; }
+        h2 { color: #0088ff; font-size: 1.1rem; margin: 0 0 4px 0; }
+        h3 { margin: 0 0 10px 0; font-size: 0.75rem; color: #aaa; text-transform: uppercase; letter-spacing: 0.05em; }
+        .control-group { margin-bottom: 12px; }
+        label { font-size: 0.85rem; }
+        select, button { width: 100%; padding: 8px; background: #121212; color: #fff; border: 1px solid #444; border-radius: 4px; cursor: pointer; font-size: 0.85rem; margin-top: 6px; }
+        button:hover { background: #333; }
+        .stats { font-size: 0.75rem; color: #666; margin-top: 5px; }
+        .legend { font-size: 0.75rem; display: flex; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 5px; }
+        .dot { height: 8px; width: 8px; border-radius: 50%; flex-shrink: 0; }
+        #rtStatus { font-size: 0.75rem; color: #888; margin-top: 6px; }
+        #rtStatus b { color: #e74c3c; }
+
+        /* ── MAP ── */
+        #map { flex: 1; background: #222; }
+
+        /* ── POPUP HORAIRES ── */
+        .stop-popup { min-width: 260px; max-height: 420px; overflow-y: auto; font-size: 12px; font-family: 'Consolas', 'Monaco', monospace; }
+        .stop-popup h3 { margin: 0; font-size: 13px; border-bottom: 2px solid #e74c3c; padding: 5px 0; position: sticky; top: 0; background: white; z-index: 10; }
+        .debug-info { background: #f8f9fa; padding: 5px; font-size: 10px; color: #666; border-bottom: 1px solid #ddd; margin-bottom: 5px; }
+        .passage-item { padding: 7px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: flex-start; }
+        .route-col { display: flex; flex-direction: column; gap: 2px; }
+        .route-badge { background: #2c3e50; color: white; padding: 1px 6px; border-radius: 3px; font-weight: bold; width: fit-content; }
+        .direction { color: #555; font-size: 10px; font-style: italic; }
+        .trip-id { color: #95a5a6; font-size: 10px; }
+        .time-col { text-align: right; }
+        .time { font-weight: bold; color: #d35400; font-size: 13px; display: block; }
+        .delay-ok    { font-size: 10px; color: #27ae60; font-weight: bold; }
+        .delay-late  { font-size: 10px; color: #e74c3c; font-weight: bold; }
+        .delay-early { font-size: 10px; color: #2980b9; font-weight: bold; }
+        .vehicle-id  { font-size: 10px; color: #8e44ad; font-weight: bold; }
+        .tomorrow    { background: #f1c40f; font-size: 10px; padding: 3px; border-radius: 3px; display: block; text-align: center; margin: 5px 0; font-weight: bold; }
+        .just-passed { opacity: 0.45; }
+        .just-passed .time { color: #999; text-decoration: line-through; }
+
+        /* ── LOADER ── */
+        #loader { position: fixed; inset: 0; background: #121212; color: #eee; z-index: 10000; display: flex; justify-content: center; align-items: center; flex-direction: column; gap: 8px; font-family: monospace; }
+        #loader p { margin: 0; font-size: 0.9rem; color: #aaa; }
+        #loaderError { color: #e74c3c; font-weight: bold; }
+    </style>
+</head>
+<body>
+
+<div id="loader">
+    <h2 style="color:#0088ff; margin:0;">🛠️ GTFS Inspector</h2>
+    <p id="loaderMsg">Chargement des données...</p>
+    <p id="loaderError"></p>
+</div>
+
+<!-- ══════════════ SIDEBAR ══════════════ -->
+<div class="sidebar">
+    <h2>🛠️ GTFS Inspector</h2>
+
+    <!-- Panneau 1 : Réseau global -->
+    <div class="card">
+        <h3>1. Réseau Global</h3>
+        <div class="control-group">
+            <label><input type="checkbox" id="checkAllStops" onchange="toggleAllStops()"> Afficher tous les arrêts</label>
+            <div id="countStops" class="stats">Chargement...</div>
+        </div>
+        <p class="stats">Cochez/décochez pour afficher ou masquer tous les arrêts cliquables.</p>
+    </div>
+
+    <!-- Panneau 2 : Inspection d'une ligne -->
+    <div class="card">
+        <h3>2. Inspection par Ligne</h3>
+        <select id="lineSelector" onchange="inspectLine()">
+            <option value="">-- Choisir une ligne --</option>
+        </select>
+
+        <div id="lineDetails" style="margin-top:12px; display:none;">
+            <div class="control-group">
+                <label>Direction :</label>
+                <select id="dirSelector" onchange="inspectLine()"></select>
+            </div>
+            <div class="legend">
+                <div class="legend-item"><span class="dot" style="background:#0088ff"></span> Tracé shape</div>
+                <div class="legend-item"><span class="dot" style="background:#ffae00"></span> Arrêts de la ligne sélectionnée</div>
+                <div class="legend-item"><span class="dot" style="background:#e74c3c"></span> Autres arrêts</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Panneau 3 : Temps réel -->
+    <div class="card rt">
+        <h3>3. Temps Réel (GTFS-RT)</h3>
+        <p class="stats">Cliquez sur un arrêt <span style="color:#e74c3c">●</span> pour voir les prochains passages et les données temps réel.</p>
+        <div id="rtStatus">Planning: <b>—</b></div>
+    </div>
+
+    <!-- Panneau 4 : Outils -->
+    <div class="card">
+        <h3>4. Outils</h3>
+        <button onclick="resetMap()">🗑️ Vider la carte</button>
+        <p class="stats" style="margin-top:8px;">Tracés issus de <code>shapes/</code>, arrêts de <code>network_cleaned.json</code>, horaires de <code>schedules/</code>.</p>
+    </div>
+</div>
+
+<!-- ══════════════ MAP ══════════════ -->
+<div id="map"></div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+// ═══════════════════════════════════════════
+//  CARTE
+// ═══════════════════════════════════════════
+const map = L.map('map').setView([47.081, 2.398], 13);
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { opacity: 0.6 }).addTo(map);
+
+const layers = {
+    rtStops:      L.featureGroup().addTo(map), // toujours sur la carte, visibilité gérée par les styles
+    currentShape: L.layerGroup().addTo(map),
+};
+
+// Index stop_id → marker Leaflet pour recolorer sans recréer
+const stopMarkerById = {};
+
+// ═══════════════════════════════════════════
+//  DONNÉES GLOBALES
+// ═══════════════════════════════════════════
+let appData        = { allStops: [], network: {} };
+let stopTimesData  = {};
+let tripUpdates    = {};
+let networkData    = {};
+let loadedDate     = '';
+let currentGeoJSON = null;
+const tripDirectionIndex = {};
+
+// ═══════════════════════════════════════════
+//  UTILITAIRES
+// ═══════════════════════════════════════════
+function dateStr(d) {
+    const y   = d.getFullYear();
+    const m   = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}${m}${day}`;
+}
+
+function buildTripDirectionIndex() {
+    for (const [line, data] of Object.entries(networkData)) {
+        tripDirectionIndex[line] = Object.keys(data.directions);
+    }
+}
+
+function getDirectionLabel(route) {
+    const dirs = tripDirectionIndex[route];
+    if (!dirs || dirs.length === 0) return null;
+    return dirs.join(' / ');
+}
+
+function setLoader(msg, err = '') {
+    document.getElementById('loaderMsg').textContent = msg;
+    document.getElementById('loaderError').textContent = err;
+}
+
+// ═══════════════════════════════════════════
+//  CHARGEMENT INITIAL
+// ═══════════════════════════════════════════
+async function loadAll() {
+    const bust  = `?v=${Date.now()}`;
+    const today = dateStr(new Date());
+    loadedDate  = today;
+
+    setLoader(`Chargement des données (${today})...`);
+
+    const [allStops, network, times, updates] = await Promise.all([
+        fetch(`./data/all_stops.json${bust}`).then(r => r.json()),
+        fetch(`./data/network_cleaned.json${bust}`).then(r => r.json()),
+        fetch(`./data/schedules/stop_times_${today}.json${bust}`).then(r => r.json()),
+        fetch(`./data/trip_updates.json${bust}`).then(r => r.json()).catch(() => ({}))
+    ]);
+
+    appData       = { allStops, network };
+    networkData   = network;
+    stopTimesData = times;
+    tripUpdates   = updates;
+
+    buildTripDirectionIndex();
+
+    document.getElementById('countStops').innerText = `${allStops.length} arrêts chargés.`;
+    document.getElementById('rtStatus').innerHTML =
+        `Planning: <b>${loadedDate}</b> — ${Object.keys(tripUpdates).length} trips RT`;
+
+    fillLineSelector();
+    initRTStopsLayer(allStops);
+
+    // Arrêts visibles par défaut, checkbox cochée
+    document.getElementById('checkAllStops').checked = true;
+    map.fitBounds(layers.rtStops.getBounds());
+
+    document.getElementById('loader').style.display = 'none';
+}
+
+// ═══════════════════════════════════════════
+//  LAYER : ARRÊTS CLIQUABLES TEMPS RÉEL
+//  Visible par défaut. Chaque marker est indexé
+//  par stop_id pour recoloration directe.
+// ═══════════════════════════════════════════
+const STYLE_DEFAULT  = { color: '#2c3e50', fillColor: '#e74c3c', fillOpacity: 0.8, weight: 1, radius: 6 };
+const STYLE_SELECTED = { color: '#7a4800', fillColor: '#ffae00', fillOpacity: 1,   weight: 2, radius: 7 };
+const STYLE_HIDDEN   = { color: 'transparent', fillColor: 'transparent', fillOpacity: 0, weight: 0, radius: 6 };
+
+function initRTStopsLayer(stops) {
+    stops.forEach(stop => {
+        const m = L.circleMarker([stop.lat, stop.lon], { ...STYLE_DEFAULT });
+        m.on('click', () => m.bindPopup(renderRTPopup(stop)).openPopup());
+        layers.rtStops.addLayer(m);
+        stopMarkerById[stop.id] = m;
+    });
+}
+
+// ═══════════════════════════════════════════
+//  POPUP HORAIRES TEMPS RÉEL
+// ═══════════════════════════════════════════
+function renderRTPopup(stop, subtitle = '') {
+    const nowDate = new Date();
+    const now     = nowDate.toTimeString().split(' ')[0].substring(0, 5);
+
+    // Fenêtre -5 min : on inclut les bus passés récemment
+    const cutoff = new Date(nowDate.getTime() - 5 * 60 * 1000)
+        .toTimeString().split(' ')[0].substring(0, 5);
+
+    let passages = (stopTimesData[stop.id] || []).slice();
+    passages.sort((a, b) => a.t.localeCompare(b.t));
+
+    let upcoming  = passages.filter(p => p.t >= cutoff);
+    let isTomorrow = false;
+
+    if (upcoming.length === 0 && passages.length > 0) {
+        upcoming   = passages;
+        isTomorrow = true;
+    }
+
+    let html = `<div class="stop-popup">
+        <h3>${stop.name}</h3>
+        ${subtitle ? `<div style="padding:3px 5px;font-size:11px;color:#888;border-bottom:1px solid #eee">${subtitle}</div>` : ''}
+        <div class="debug-info">
+            ID Arrêt: <b>${stop.id}</b><br>
+            Planning: <b>${loadedDate}</b><br>
+            Passages indexés: <b>${passages.length}</b>
+        </div>`;
+
+    if (isTomorrow) html += `<div class="tomorrow">⏭ SÉQUENCE LENDEMAIN REPRISE</div>`;
+
+    if (upcoming.length === 0) {
+        html += `<p style="padding:8px;color:#999">Aucun passage trouvé.</p>`;
+    } else {
+        upcoming.slice(0, 8).forEach(p => {
+            const rt      = tripUpdates[p.id];
+            const delay   = rt ? (rt.delays[stop.id] ?? null) : null;
+            const vehicle = rt ? rt.vehicle : null;
+            const isPast  = p.t < now;
+            const dirLabel = getDirectionLabel(p.r);
+
+            let delayHtml = '';
+            if (delay === 0)    delayHtml = `<span class="delay-ok">✔ À l'heure</span>`;
+            else if (delay > 0) delayHtml = `<span class="delay-late">▲ +${Math.round(delay/60)} min</span>`;
+            else if (delay < 0) delayHtml = `<span class="delay-early">▼ -${Math.abs(Math.round(delay/60))} min</span>`;
+
+            const vehicleHtml = vehicle  ? `<span class="vehicle-id">🚌 Bus ${vehicle}</span>` : '';
+            const dirHtml     = dirLabel ? `<span class="direction">→ ${dirLabel}</span>`       : '';
+
+            html += `
+                <div class="passage-item${isPast ? ' just-passed' : ''}">
+                    <div class="route-col">
+                        <span class="route-badge">Ligne ${p.r}</span>
+                        ${dirHtml}
+                        <span class="trip-id">Trip: ${p.id || 'N/A'}</span>
+                        ${vehicleHtml}
+                        ${delayHtml}
+                    </div>
+                    <div class="time-col">
+                        <span class="time">${p.t}</span>
+                    </div>
+                </div>`;
+        });
+    }
+    return html + `</div>`;
+}
+
+// ═══════════════════════════════════════════
+//  INSPECTION PAR LIGNE
+// ═══════════════════════════════════════════
+
+// IDs des arrêts actuellement mis en surbrillance (pour reset)
+let highlightedStopIds = [];
+
+function resetStopHighlights() {
+    const show = document.getElementById('checkAllStops').checked;
+    highlightedStopIds.forEach(id => {
+        const m = stopMarkerById[id];
+        if (m) m.setStyle(show ? STYLE_DEFAULT : STYLE_HIDDEN);
+    });
+    highlightedStopIds = [];
+}
+
+function fillLineSelector() {
+    const select = document.getElementById('lineSelector');
+    Object.keys(appData.network)
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+        .forEach(line => {
+            const opt = document.createElement('option');
+            opt.value   = line;
+            opt.innerText = `Ligne ${line}`;
+            select.appendChild(opt);
+        });
+}
+
+async function inspectLine() {
+    const lineId = document.getElementById('lineSelector').value;
+
+    // Réinitialiser tracé et surbrillances
+    layers.currentShape.clearLayers();
+    resetStopHighlights();
+
+    if (!lineId) {
+        document.getElementById('lineDetails').style.display = 'none';
+        currentGeoJSON = null;
+        return;
+    }
+
+    // Charger le GeoJSON si on change de ligne
+    if (!currentGeoJSON || currentGeoJSON._lineId !== lineId) {
+        try {
+            currentGeoJSON = await fetch(`./data/shapes/${lineId}.geojson`).then(r => r.json());
+            currentGeoJSON._lineId = lineId;
+        } catch (e) {
+            console.warn(`Pas de GeoJSON pour la ligne ${lineId}`);
+            return;
+        }
+
+        // Remplir le sélecteur de directions
+        const dirSelect = document.getElementById('dirSelector');
+        dirSelect.innerHTML = '';
+        currentGeoJSON.features.forEach(f => {
+            const opt = document.createElement('option');
+            opt.value     = f.properties.direction;
+            opt.innerText = `→ ${f.properties.direction}`;
+            dirSelect.appendChild(opt);
+        });
+    }
+
+    document.getElementById('lineDetails').style.display = 'block';
+    const direction = document.getElementById('dirSelector').value;
+
+    // 1. Tracé shape
+    const feature = currentGeoJSON.features.find(f => f.properties.direction === direction);
+    if (feature) {
+        const latlngs = feature.geometry.coordinates.map(([lon, lat]) => [lat, lon]);
+        const poly = L.polyline(latlngs, { color: '#0088ff', weight: 5, opacity: 0.8 })
+            .addTo(layers.currentShape);
+        map.fitBounds(poly.getBounds());
+    }
+
+    // 2. Recolorer les markers des arrêts de cette ligne/direction
+    //    Matching direct par stop_id (présent dans network_cleaned depuis la dernière regen)
+    const lineStops = appData.network[lineId]?.directions?.[direction];
+    if (lineStops) {
+        lineStops.forEach((s, index) => {
+            const m = stopMarkerById[s.id];
+            if (!m) return;
+            m.setStyle(STYLE_SELECTED);
+            m.bindPopup(renderRTPopup(s, `<b>${index + 1}.</b> Ligne ${lineId} → ${direction}`));
+            highlightedStopIds.push(s.id);
+        });
+    }
+}
+
+// ═══════════════════════════════════════════
+//  OUTILS
+// ═══════════════════════════════════════════
+function toggleAllStops() {
+    const show = document.getElementById('checkAllStops').checked;
+    const highlightedSet = new Set(highlightedStopIds);
+
+    Object.entries(stopMarkerById).forEach(([id, m]) => {
+        if (highlightedSet.has(id)) {
+            // Les arrêts surlignés restent toujours visibles, quelle que soit la checkbox
+            m.setStyle(STYLE_SELECTED);
+        } else {
+            m.setStyle(show ? STYLE_DEFAULT : STYLE_HIDDEN);
+        }
+    });
+}
+
+function resetMap() {
+    document.getElementById('lineSelector').value    = '';
+    document.getElementById('checkAllStops').checked = true;
+    document.getElementById('dirSelector').innerHTML = '';
+    document.getElementById('lineDetails').style.display = 'none';
+    layers.currentShape.clearLayers();
+    resetStopHighlights();
+    // Cacher tous les arrêts et décocher
+    Object.values(stopMarkerById).forEach(m => m.setStyle(STYLE_HIDDEN));
+    document.getElementById('checkAllStops').checked = false;
+    currentGeoJSON = null;
+    map.setView([47.081, 2.398], 13);
+}
+
+// ═══════════════════════════════════════════
+//  DÉMARRAGE
+// ═══════════════════════════════════════════
+loadAll().catch(e => {
+    setLoader('Erreur de chargement.', e.message);
+    console.error(e);
+});
+</script>
+</body>
+</html>
