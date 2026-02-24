@@ -92,15 +92,6 @@ def run_daily():
     register_version(db_name, sha256)
     log.info(f"✅ Pipeline quotidien terminé → {db_name}")
 
-
-def run_realtime():
-    """Mise à jour du temps réel."""
-    try:
-        generate_trip_updates()
-    except Exception as e:
-        log.error(f"Erreur temps réel : {e}")
-
-
 if __name__ == "__main__":
     setup_registry()
     run_daily()
