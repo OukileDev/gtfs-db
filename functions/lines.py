@@ -1,25 +1,21 @@
-import json
 import os
 import pandas as pd
+from psycopg import Connection
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, 'data', 'gtfs_data')
-OUTPUT_FILE = os.path.join(BASE_DIR, 'data', 'network_cleaned.json')
 
 NAVETTES = ["NAVETTE", "Ne8"]
 
 
-def get_cleaned_lines():
+def get_cleaned_lines(conn: Connection):
     """
-    Génère network_cleaned.json : pour chaque ligne, la liste ordonnée des arrêts
-    par direction, basée sur le voyage canonique (shape la plus fréquente).
+    Insère les routes et les trips filtrés dans la base cible.
     """
-    print("--- Génération des lignes nettoyées ---")
+    print("--- Import des lignes et voyages ---")
 
     routes = pd.read_csv(os.path.join(DATA_DIR, 'routes.txt'))
     trips = pd.read_csv(os.path.join(DATA_DIR, 'trips.txt'))
-    stop_times = pd.read_csv(os.path.join(DATA_DIR, 'stop_times.txt'), dtype={'stop_headsign': str})
-    stops = pd.read_csv(os.path.join(DATA_DIR, 'stops.txt'))
 
     def is_target_route(short_name):
         name = str(short_name)
@@ -28,51 +24,54 @@ def get_cleaned_lines():
     filtered_routes = routes[routes['route_short_name'].apply(is_target_route)]
     print(f"Ménage terminé : {len(filtered_routes)} lignes conservées sur {len(routes)}.")
 
-    network_data = {}
+    # Insertion des routes
+    route_rows = [
+        (
+            str(row['route_id']),
+            str(row['route_short_name']),
+            str(row['route_long_name']),
+            int(row['route_type']),
+            str(row['route_color']) if pd.notna(row['route_color']) else None,
+            str(row['route_text_color']) if pd.notna(row['route_text_color']) else None,
+        )
+        for _, row in filtered_routes.iterrows()
+    ]
 
-    for _, route in filtered_routes.iterrows():
-        r_id = route['route_id']
-        r_name = str(route['route_short_name'])
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO routes (route_id, route_short_name, route_long_name, route_type, route_color, route_text_color)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (route_id) DO NOTHING
+            """,
+            route_rows
+        )
 
-        network_data[r_name] = {
-            "long_name": route['route_long_name'],
-            "directions": {}
-        }
+    # Insertion des trips pour ces routes uniquement
+    filtered_route_ids = set(filtered_routes['route_id'].astype(str))
+    filtered_trips = trips[trips['route_id'].astype(str).isin(filtered_route_ids)]
 
-        route_trips = trips[trips['route_id'] == r_id]
-        directions = route_trips['direction_id'].unique()
+    trip_rows = [
+        (
+            str(row['trip_id']),
+            str(row['route_id']),
+            str(row['service_id']),
+            str(row['trip_headsign']) if pd.notna(row['trip_headsign']) else None,
+            int(row['direction_id']) if pd.notna(row['direction_id']) else None,
+            str(row['shape_id']) if pd.notna(row['shape_id']) else None,
+        )
+        for _, row in filtered_trips.iterrows()
+    ]
 
-        for d_id in directions:
-            try:
-                dir_trips = route_trips[route_trips['direction_id'] == d_id]
+    with conn.cursor() as cur:
+        cur.executemany(
+            """
+            INSERT INTO trips (trip_id, route_id, service_id, trip_headsign, direction_id, shape_id)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            ON CONFLICT (trip_id) DO NOTHING
+            """,
+            trip_rows
+        )
 
-                # Label de direction = trip_headsign le plus fréquent (source fiable)
-                dir_label = dir_trips['trip_headsign'].value_counts().idxmax()
-
-                # Shape de référence = shape la plus fréquente parmi les trips canoniques
-                canonical_trips = dir_trips[dir_trips['trip_headsign'] == dir_label]
-                ref_shape_id = canonical_trips['shape_id'].value_counts().idxmax()
-                t_id = canonical_trips[canonical_trips['shape_id'] == ref_shape_id].iloc[0]['trip_id']
-
-                # Récupération et jointure des arrêts
-                times = stop_times[stop_times['trip_id'] == t_id].sort_values('stop_sequence')
-                full_stops = pd.merge(times, stops, on='stop_id')
-
-                stop_list = [
-                    {
-                        "id": str(s['stop_id']),
-                        "name": s['stop_name'],
-                        "lat": float(s['stop_lat']),
-                        "lon": float(s['stop_lon'])
-                    }
-                    for _, s in full_stops.iterrows()
-                ]
-
-                network_data[r_name]["directions"][dir_label] = stop_list
-            except (IndexError, KeyError):
-                continue
-
-    with open(OUTPUT_FILE, 'w', encoding='utf-8') as f:
-        json.dump(network_data, f, indent=4, ensure_ascii=False)
-
-    print(f"Terminé ! Réseau sauvegardé dans '{OUTPUT_FILE}'.")
+    conn.commit()
+    print(f"Terminé ! {len(route_rows)} routes et {len(trip_rows)} trips insérés.")

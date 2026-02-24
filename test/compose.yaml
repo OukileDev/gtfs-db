@@ -1,0 +1,22 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: oukile
+      POSTGRES_PASSWORD: oukile
+      POSTGRES_DB: postgres
+    ports:
+      - "5432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  pgweb:
+    image: sosedoff/pgweb
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      PGWEB_DATABASE_URL: postgres://oukile:oukile@postgres:5432/postgres?sslmode=disable
+    depends_on:
+      - postgres

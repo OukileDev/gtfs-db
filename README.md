@@ -13,14 +13,12 @@ Ce projet est personnel et n'est pas affilié à Agglobus ou à la RATPDev.
 3. **Shapes** — tracés GeoJSON par ligne et par direction (`shapes/*.geojson`)
 4. **Réseau nettoyé** — lignes avec leurs arrêts ordonnés par direction (`network_cleaned.json`)
 5. **Plannings** — horaires par arrêt et par jour de service (`schedules/stop_times_YYYYMMDD.json`)
-6. **Temps réel** — retards issus du flux GTFS-RT (`trip_updates.json`)
 
 ## Stack technique
 - **Docker (prochainement)**
 - **Python 3**
-- **Prisma (prochainement)**
+- **Psycopg 3**
 - **pandas**
-- **gtfs-realtime-bindings**
 - **requests**
 - **python-dotenv**
 
