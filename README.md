@@ -69,5 +69,17 @@ gtfs-api/
 | `GTFS_URL` | URL du fichier GTFS statique (zip) |
 | `GTFSRT_URL` | URL du flux GTFS-RT (TripUpdates) |
 
+## Changement du schéma stop_times
+
+La table `stop_times` a été modifiée pour stocker les horaires d'arrivée sous deux formes :
+
+- `crossing_time_text` (VARCHAR) : la valeur texte telle qu'elle apparait dans `stop_times.txt` (ex: `25:30:00`).
+- `crossing_time_seconds` (INT) : le nombre de secondes écoulées depuis minuit correspondant à `crossing_time_text`.
+
+Remarques :
+- Le format GTFS autorise des heures supérieures à 23 (par exemple `24:00:00` ou `25:30:00`) pour indiquer des passages après minuit. La conversion additionne les heures en secondes (24:00:00 → 86400).
+- Si la valeur d'arrivée est invalide ou manquante, `crossing_time_seconds` sera NULL et `crossing_time_text` conservera la valeur fournie (ou chaîne vide si absente).
+
+
 ## Contribution
 Si vous souhaitez contribuer, n'hésitez pas à ouvrir une issue ou une pull request.

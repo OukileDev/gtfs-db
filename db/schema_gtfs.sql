@@ -36,7 +36,20 @@ CREATE TABLE IF NOT EXISTS stop_times (
     trip_id        VARCHAR(100) NOT NULL REFERENCES trips(trip_id),
     stop_sequence  INT          NOT NULL,
     stop_id        VARCHAR(100) NOT NULL REFERENCES stops(stop_id),
-    arrival_time   INTERVAL     NOT NULL,
-    departure_time INTERVAL     NOT NULL,
+    crossing_time_seconds INT,
+    crossing_time_text    VARCHAR(20),
     PRIMARY KEY (trip_id, stop_sequence)
+);
+
+-- Table network : une ligne par numero de ligne, avec les deux directions et
+-- la liste ordonnée des arrêts pour chaque direction (format JSONB).
+
+CREATE TABLE IF NOT EXISTS network (
+    line_number      VARCHAR(50) PRIMARY KEY,
+    direction_name_1 VARCHAR(200),
+    -- stocke la liste d'arrêts sérialisée en JSON texte pour compatibilité
+    -- avec des ORM / drivers qui ne supportent pas JSONB (ex: Prisma)
+    stop_list_1      TEXT,
+    direction_name_2 VARCHAR(200),
+    stop_list_2      TEXT
 );

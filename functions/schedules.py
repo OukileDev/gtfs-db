@@ -98,19 +98,34 @@ def generate_all_schedules(conn: Connection):
         for row in reader:
             if row['trip_id'] not in valid_trip_ids:
                 continue
+            # On conserve le texte d'arrivée et on calcule les secondes depuis minuit
+            arrival_text = row.get('arrival_time') or ''
+            crossing_seconds = None
+            if arrival_text:
+                # GTFS autorise des heures > 23 (ex: 25:30:00). On convertit en secondes depuis minuit
+                try:
+                    parts = arrival_text.split(':')
+                    if len(parts) == 3:
+                        h, m, s = int(parts[0]), int(parts[1]), int(parts[2])
+                        crossing_seconds = h * 3600 + m * 60 + s
+                    else:
+                        crossing_seconds = None
+                except Exception:
+                    crossing_seconds = None
+
             batch.append((
                 row['trip_id'],
                 int(row['stop_sequence']),
                 row['stop_id'],
-                row['arrival_time'],
-                row['departure_time'],
+                crossing_seconds,
+                arrival_text,
             ))
             if len(batch) >= BATCH_SIZE:
                 with conn.cursor() as cur:
                     cur.executemany(
                         """
-                        INSERT INTO stop_times (trip_id, stop_sequence, stop_id, arrival_time, departure_time)
-                        VALUES (%s, %s, %s, %s::interval, %s::interval)
+                        INSERT INTO stop_times (trip_id, stop_sequence, stop_id, crossing_time_seconds, crossing_time_text)
+                        VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (trip_id, stop_sequence) DO NOTHING
                         """,
                         batch
@@ -124,8 +139,8 @@ def generate_all_schedules(conn: Connection):
         with conn.cursor() as cur:
             cur.executemany(
                 """
-                INSERT INTO stop_times (trip_id, stop_sequence, stop_id, arrival_time, departure_time)
-                VALUES (%s, %s, %s, %s::interval, %s::interval)
+                INSERT INTO stop_times (trip_id, stop_sequence, stop_id, crossing_time_seconds, crossing_time_text)
+                VALUES (%s, %s, %s, %s, %s)
                 ON CONFLICT (trip_id, stop_sequence) DO NOTHING
                 """,
                 batch

@@ -28,6 +28,7 @@ from functions.lines import get_cleaned_lines
 from functions.schedules import generate_all_schedules
 from functions.shapes import generate_shapes
 from functions.stops import generate_all_stops
+from functions.network import generate_network
 
 logging.basicConfig(
     level=logging.INFO,
@@ -82,12 +83,15 @@ def run_daily():
 
         log.info("Réseau nettoyé...")
         get_cleaned_lines(conn)
+        # Génération de la table network (liste d'arrêts par direction)
+        log.info("Réseau (network)...")
+        generate_network(conn)
 
         log.info("Plannings...")
         generate_all_schedules(conn)
 
-    log.info("Shapes...")
-    generate_shapes()
+    # log.info("Shapes...")
+    # generate_shapes()
 
     register_version(db_name, sha256)
     log.info(f"✅ Pipeline quotidien terminé → {db_name}")
