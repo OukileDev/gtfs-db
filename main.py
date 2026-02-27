@@ -1,8 +1,10 @@
 import argparse
 import hashlib
 import io
+import json
 import logging
 import os
+import subprocess
 import sys
 import zipfile
 from datetime import datetime
@@ -38,6 +40,53 @@ logging.basicConfig(
 log = logging.getLogger(__name__)
 
 GTFS_URL = os.getenv("GTFS_URL")
+KUBERNETES_ENABLED = os.getenv("KUBERNETES_ENABLED", "false").lower() == "true"
+POSTGRES_USER = os.getenv("POSTGRES_USER", "oukile")
+POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "changeme")
+POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+
+
+def update_k8s_configmap(db_name: str):
+    """
+    Crée ou met à jour un ConfigMap Kubernetes avec le nom de la base active.
+    Cela permet aux autres services (notamment oukile-webapp) de connaître la base courante.
+    """
+    if not KUBERNETES_ENABLED:
+        log.info("Kubernetes n'est pas activé, skip ConfigMap update")
+        return
+
+    try:
+        configmap_name = "gtfs-active-db"
+        namespace = "oukile"
+        database_url = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:{POSTGRES_PORT}/{db_name}"
+
+        # Construire le ConfigMap en YAML
+        configmap_yaml = f"""
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {configmap_name}
+  namespace: {namespace}
+data:
+  ACTIVE_DATABASE: "{db_name}"
+  DATABASE_URL: "{database_url}"
+"""
+        
+        # Appliquer le ConfigMap via kubectl
+        result = subprocess.run(
+            ["kubectl", "apply", "-f", "-"],
+            input=configmap_yaml.encode(),
+            capture_output=True,
+            timeout=30
+        )
+        
+        if result.returncode == 0:
+            log.info(f"✅ ConfigMap '{configmap_name}' mis à jour avec la base '{db_name}'")
+        else:
+            log.error(f"❌ Erreur lors de la mise à jour du ConfigMap : {result.stderr.decode()}")
+    except Exception as e:
+        log.error(f"❌ Erreur lors de la mise à jour du ConfigMap Kubernetes : {e}")
 
 
 def fetch_gtfs() -> tuple[str, bytes]:
@@ -95,6 +144,9 @@ def run_daily():
 
     register_version(db_name, sha256)
     log.info(f"✅ Pipeline quotidien terminé → {db_name}")
+    
+    # Mettre à jour le ConfigMap Kubernetes si activé
+    update_k8s_configmap(db_name)
 
 if __name__ == "__main__":
     setup_registry()
