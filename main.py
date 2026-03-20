@@ -7,6 +7,7 @@ import os
 import subprocess
 import sys
 import zipfile
+import time
 from datetime import datetime
 
 import requests
@@ -150,4 +151,15 @@ def run_daily():
 
 if __name__ == "__main__":
     setup_registry()
-    run_daily()
+    
+    INTERVAL_HOURS = 12
+    INTERVAL_SECONDS = INTERVAL_HOURS * 3600
+    
+    while True:
+        try:
+            run_daily()
+        except Exception as e:
+            log.error(f"Erreur lors de l'exécution du pipeline : {e}")
+        
+        log.info(f"Attente de {INTERVAL_HOURS} heures avant la prochaine exécution...")
+        time.sleep(INTERVAL_SECONDS)
