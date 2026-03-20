@@ -1,5 +1,6 @@
 import os
 import psycopg
+import secrets
 from dotenv import load_dotenv
 
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), '.env'))
@@ -23,6 +24,22 @@ def get_connection(db_name: str):
     return psycopg.connect(f"{base}/{db_name}")
 
 
+def create_user_if_not_exists():
+    """Crée l'utilisateur DB s'il n'existe pas et affiche son mot de passe."""
+    with psycopg.connect(ADMIN_URL, autocommit=True) as conn:
+        exists = conn.execute(
+            "SELECT 1 FROM pg_roles WHERE rolname = %s", (DB_USER,)
+        ).fetchone()
+
+        if not exists:
+            password = secrets.token_urlsafe(16)
+            conn.execute(f"CREATE ROLE {DB_USER} WITH LOGIN PASSWORD '{password}'")
+            print(f"✅ Utilisateur '{DB_USER}' créé avec succès.")
+            print(f"🔑 IMPORTANT - Mot de passe temporaire pour '{DB_USER}' : {password}")
+        else:
+            print(f"ℹ️ L'utilisateur '{DB_USER}' existe déjà.")
+
+
 def create_database_if_not_exists(db_name: str):
     """Crée la base et donne le droit de connexion à l'utilisateur oukile."""
     with psycopg.connect(ADMIN_URL, autocommit=True) as conn:
@@ -41,6 +58,7 @@ def create_database_if_not_exists(db_name: str):
 
 def setup_registry():
     """Prépare le registre et donne les droits de lecture sur les tables de version."""
+    create_user_if_not_exists()
     create_database_if_not_exists("gtfs_infos")
 
     schema_path = os.path.join(os.path.dirname(__file__), 'schema_registry.sql')
