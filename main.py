@@ -10,6 +10,7 @@ import zipfile
 import time
 from datetime import datetime
 
+import redis as redislib
 import requests
 from dotenv import load_dotenv
 
@@ -27,6 +28,7 @@ from db.connection import (
     register_version,
     setup_registry,
 )
+from db.redis_writer import write_gtfs_to_redis
 from functions.lines import get_cleaned_lines
 from functions.schedules import generate_all_schedules
 from functions.shapes import generate_shapes
@@ -46,6 +48,7 @@ POSTGRES_USER = os.getenv("POSTGRES_USER", "oukile")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "changeme")
 POSTGRES_HOST = os.getenv("POSTGRES_HOST", "postgres")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
+REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 
 
 def update_k8s_configmap(db_name: str):
@@ -144,8 +147,19 @@ def run_daily():
     # generate_shapes()
 
     register_version(db_name, sha256)
+    log.info(f"✅ Pipeline PostgreSQL terminé → {db_name}")
+
+    # Écriture dans Redis (source de vérité pour oukile-webapp)
+    log.info("Écriture des données GTFS dans Redis...")
+    try:
+        r = redislib.from_url(REDIS_URL)
+        write_gtfs_to_redis(r)
+    except Exception as e:
+        log.error(f"❌ Erreur lors de l'écriture Redis : {e}")
+        raise
+
     log.info(f"✅ Pipeline quotidien terminé → {db_name}")
-    
+
     # Mettre à jour le ConfigMap Kubernetes si activé
     update_k8s_configmap(db_name)
 

@@ -2,3 +2,4 @@ requests
 pandas
 psycopg
 python-dotenv
+redis
